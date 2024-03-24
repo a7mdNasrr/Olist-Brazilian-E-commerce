@@ -5,3 +5,4 @@
 * Olist is a fast-growing e-commerce platform, based in Brazil. The company operates a marketplace connecting sellers and buyers across various product categories.  
 * In this project, I'm analyzing customer segmentation, purchasing behavior, churn analysis, predictive modeling, and visualizing the findings and reporting it.  
 * I'm using the six steps of the data analysis process, which is (Ask, Prepare, Process, Analyze, Share, and Act) to answer the business objectives.
+* Link for the RMarkdown file: https://a7mdnasrr.github.io/AhmedNasser.github.io/rmarkdown/olist-rmarkdown/
