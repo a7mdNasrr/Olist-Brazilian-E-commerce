@@ -1,0 +1,497 @@
+---
+title: "Olist Data Analysis Project"
+author: "Ahmed Nasser"
+date: "2024-03-20"
+output:
+  html_document: default
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Introduction:**
+As a senior data analyst working at a fast-growing e-commerce platform, Olist, based in Brazil. -The company operates a marketplace connecting sellers and buyers across various product categories-.
+My task is to analyze the available dataset to derive actionable insights to improve business operations and customer experience, by first answering the business objectives.  
+*In this analysis case study I'll use the six steps of the data analysis process, which is (Ask, Prepare, Process, Analyze, Share, and Act).*
+
+## **Business Objectives:**
+1. Exploring the data.
+2. Find the customer segmentation.
+3. Create Churn Analysis.
+4. Design a Predictive Model.
+5. Visualize the findings and reporting it.
+
+
+### **Ask:**
+In this step we will ask the important questions *-and answering them in the upcoming steps-* to meet the business objectives.
+
+* **Exploring the data:**
+  1. What is the distribution of orders over time, and trends in order volume and order statuses?
+  2. What the most popular product categories and sellers on the platform?
+  3. What is the customer demographics, such as location and purchasing behavior?
+
+* **Find the customer segmentation:**
+  1. Create segment customers based on their purchasing behavior, geographic location, or other relevant factors.
+  2. Explore different segmentation techniques tailored to the characteristics of the Brazilian e-commerce market.
+
+* **Create Churn Analysis:**
+  1. Analyze customer churn rate over time, identifying factors influencing churn and proposing strategies to retain customers.
+  2. Examine the impact of product quality, delivery speed, and customer service on customer satisfaction and retention.
+
+* **Design a Predictive Model:**
+  1. Build predictive models to forecast sales, customer demand, or product popularity.
+  2. Evaluate the performance of different forecasting algorithms and assess their suitability for the Brazilian e-commerce market.
+
+* **Visualize the findings and reporting it:**
+  1. Create visualizations and dashboards to present key insights and trends.
+  2. Prepare a comprehensive report summarizing my analysis and recommendations.
+  3. Present my findings to stakeholders, highlighting actionable recommendations to drive business growth and improve customer satisfaction.
+
+### **Prepare:**
+* Now we will download the Brazilian E-commerce Dataset from Olist from https://drive.google.com/file/d/1pHkWkE4lveePWOU9Ornn8uNeI7RjQ1BF/view
+and start exploring.
+
+### **Process:**
+* In this case study I'll be using **R** to analyze the data.
+  1. Unzip the csv files in the same folder.
+  2. Open RStudio and start new session.
+  3. Create .RMD file and start our script.
+  4. Read csv files into multiple dataframes.
+```{r include=FALSE}
+library(tidyverse)
+orders <- read_csv('olist_orders_dataset.csv')
+customers <- read_csv('olist_customers_dataset.csv')
+products <- read_csv('olist_products_dataset.csv')
+sellers <- read_csv('olist_sellers_dataset.csv')
+payments <- read_csv('olist_order_payments_dataset.csv')
+reviews <- read_csv('olist_order_reviews_dataset.csv')
+geolocation <- read_csv('olist_geolocation_dataset.csv')
+items <- read_csv('olist_order_items_dataset.csv')
+category <- read_csv('product_category_name_translation.csv')
+```
+```{r eval=FALSE}
+library(tidyverse)
+orders <- read_csv('olist_orders_dataset.csv')
+customers <- read_csv('olist_customers_dataset.csv')
+products <- read_csv('olist_products_dataset.csv')
+sellers <- read_csv('olist_sellers_dataset.csv')
+payments <- read_csv('olist_order_payments_dataset.csv')
+reviews <- read_csv('olist_order_reviews_dataset.csv')
+geolocation <- read_csv('olist_geolocation_dataset.csv')
+items <- read_csv('olist_order_items_dataset.csv')
+category <- read_csv('product_category_name_translation.csv')
+```
+
+  5. Use the **skimr** library to summarize the data and search for any inconsistency or null values in the important datasets (orders, customers, products, sellers, payments, and reviews).
+
+::: {.small}
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(lubridate)
+library(cluster)
+library(forecast)
+library(survival)
+library(skimr)
+
+#check the datasets
+skim(orders)
+skim(customers)
+skim(products)
+skim(sellers)
+skim(payments)
+skim(reviews)
+```
+:::
+
+  6. Now we will create a dataframe list with the datasets that has the same *Primary_key* or *Foreign_key* (orders, payments, reviews, items) to join the them together using *reduce* function in *dfx* dataframe.
+```{r}
+df_list <- list(orders,payments,reviews,items)
+dfx <- df_list %>% reduce(full_join, by='order_id')
+```
+  7. Join the rest of the datasets (products, customers, sellers) to the *dfx* and save it in *df_all* dataframe.
+```{r}
+dfx <- full_join(dfx, products)
+dfx <- full_join(dfx, customers)
+df_all <- full_join(dfx, sellers)
+```
+  8. Now we need to review the collective dataframe's column names using *colnames()* function and the first few rows using *head()* function.
+```{r}
+colnames(df_all)
+head(df_all)
+```
+  9. I noticed that some rows are duplicated due to the payment_type, so we'll remove the columns responsible for the duplication, and remove NA values.
+```{r}
+df_all <- df_all %>% group_by(customer_id) %>% 
+  mutate(sum(payment_value))
+```
+```{r}
+df_all <- df_all %>% ungroup()
+```
+```{r}
+df_all_unique <- df_all %>% subset(select = -c(payment_sequential, payment_type, payment_installments, payment_value)) %>% 
+  rename(payment_value = `sum(payment_value)`) %>% 
+  unique()
+```
+```{r}
+colnames(df_all_unique)
+head(df_all_unique)
+```
+  
+  * Check the last few months to see if there are any missing data:
+```{r}
+df_all_unique %>% count(date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  rename(count_of_orders=n) %>%
+  arrange(desc(date))
+```
+
+  * Apparently there's an issue in the last two months, so we will drop them:
+```{r}
+df_all_unique <- df_all_unique %>% filter(as.Date(order_purchase_timestamp)<'2018-9-1')
+```
+
+  
+After reviewing and cleaning, the data is consistent and descriptive.
+
+### **Analyze & Visualize:**
+* Now it's time to analyze the data and answer the business task.
+  1. What is the distribution of orders over time, and trends in order volume and order statuses?
+  * Highest year (ranked)
+```{r}
+df_all_unique %>% count(date=format(order_purchase_timestamp,'%Y')) %>%
+  rename(count_of_orders=n) %>%
+  mutate(rank=round(rank(-count_of_orders),0)) %>%
+  arrange(desc(count_of_orders))
+```
+  * Highest month of year (ranked)
+```{r}
+df_all_unique %>% count(date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  rename(count_of_orders=n) %>%
+  mutate(percent=round(count_of_orders/sum(count_of_orders)*100,2),rank=round(rank(-percent),0)) %>%
+  arrange(desc(percent))
+```
+
+
+  * Orders volume (monthly trend):
+```{r}
+df_all_unique %>% count(date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  rename(count_of_orders=n) %>%
+  ggplot(aes(ym(date),y=count_of_orders)) +
+  geom_line(linewidth = 1.3,colour="#69b3a2") +
+  geom_point(size=2.5,colour="#69b3a2") +
+  scale_x_date(date_breaks = '3 months',date_labels='%Y-%b') +
+  labs(title = 'Orders volume (monthly trend)',x='Date')
+```
+  
+  * Orders Value (monthly trend):
+```{r}
+df_all_unique %>% drop_na(payment_value) %>% 
+  group_by(date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  summarise(total_value=sum(payment_value)) %>% 
+  ggplot(aes(x=ym(date),y=total_value)) +
+  geom_line(linewidth = 1.3,colour="#5653a2") +
+  geom_point(size=2.5,colour="#5653a2") +
+  scale_x_date(date_breaks = '3 months',date_labels='%Y-%b') +
+  labs(title = 'Orders Value (monthly trend)',x='Date')
+```
+
+  * number of order status per month:
+```{r}
+df_all_unique %>% count(order_status,date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  rename(count_of_orders=n) %>%
+  ggplot(aes(ym(date),count_of_orders, colour=order_status, group=order_status)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size=2.5) +
+  scale_x_date(date_breaks = '4 months',date_labels='%Y-%b') +
+  labs(x='Date') +
+  facet_grid(order_status~., scales = "free")
+```
+  
+  2. What the most popular product categories and sellers on the platform?
+  * Most ordered product categories:
+```{r message=FALSE, warning=FALSE}
+df_all_unique %>% full_join(category) %>% 
+  count(product_category_name_english) %>%
+  rename(count_of_orders=n) %>%
+  arrange(desc(count_of_orders))
+```
+  * Highest sellers: (Note: the sellers are shown by the id, as we don't have their names for data privacy & security reasons)
+```{r}
+df_all_unique %>% count(seller_id) %>%
+  rename(count_of_orders=n) %>%
+  arrange(desc(count_of_orders))
+```
+  
+  3. What is the customer demographics, such as location and purchasing behavior?
+  * Highest cities in purchasing behavior:
+```{r}
+df_all_unique %>% count(customer_city) %>%
+  rename(count_of_orders=n) %>%
+  arrange(desc(count_of_orders))
+```
+
+* **Find the customer segmentation:**
+  1. Segment customers based on their purchasing behavior, geographic location, or other relevant factors.
+  * Highest customers in purchasing:
+```{r}
+df_all_unique %>% group_by(customer_unique_id) %>% 
+  summarise(num_of_prod = n()) %>% 
+  arrange(desc(num_of_prod))
+```
+  
+  * Top purchased product categories:
+```{r message=FALSE, warning=FALSE}
+df_all_unique %>% full_join(category) %>% 
+  mutate(product_category_name_english=fct_lump_n(product_category_name_english, 11)) %>%
+  drop_na(product_category_name_english) %>% 
+  group_by(product_category_name_english) %>% 
+  summarize(Count=n()) %>%
+  ggplot() +
+    geom_bar(aes(x=Count,y=reorder(product_category_name_english,Count),fill=product_category_name_english),stat = "identity") +
+    labs(title = 'Top purchased product categories',y='',fill='Category Name' )
+```
+
+  * Create a purchase_behavior df:
+```{r}
+purchase_behavior <- df_all_unique %>% drop_na(product_category_name) %>% 
+  mutate(
+    # Extract hour of purchase to find peak shopping hours
+    Hour_of_Purchase = hour(order_purchase_timestamp),
+    
+    # Extract day of purchase to find peak shopping days/seasons
+    Day_of_Purchase = wday(order_purchase_timestamp, label = TRUE, abbr = FALSE),
+    
+    # Extract month of purchase to find peak shopping months/seasons
+    Month_of_Purchase = month(order_purchase_timestamp, label = TRUE, abbr = FALSE)) %>%
+  group_by(customer_unique_id) %>%
+  summarise(
+    # Consumer Preferences: Most frequently purchased product category
+    Most_Frequent_Category = names(sort(table(product_category_name), decreasing = TRUE)[1]),
+    
+    # Consumer Preferences: Most frequently geographic location (city)
+    Most_Frequent_City = names(sort(table(customer_city), decreasing = TRUE)[1]),
+    
+    # Purchase Frequency: Total number of purchases
+    Total_Purchases = n(),
+    
+    # Average Hour of Purchase
+    Avg_Hour_of_Purchase = mean(Hour_of_Purchase),
+    
+    # Most Common Day of Purchase
+    Most_Common_Day = names(sort(table(Day_of_Purchase), decreasing = TRUE)[1]),
+    
+    # Most Common Month of Purchase
+    Most_Common_Month = names(sort(table(Month_of_Purchase), decreasing = TRUE)[1]))
+
+head(purchase_behavior)
+```
+  
+
+  2. Explore different segmentation techniques tailored to the characteristics of the Brazilian e-commerce market.
+  * The percent of customers whose bought multiple products:
+```{r}
+result <- df_all_unique %>% count(customer_unique_id) %>% 
+  summarise(total_customers_count = n())
+
+df_all_unique %>% group_by(customer_unique_id) %>% 
+  summarise(num_of_prod = n(),count=n_distinct(customer_unique_id)) %>% 
+  filter(num_of_prod > 1) %>% 
+  reframe(num_retend_customers = sum(count),total_customers = result$total_customers_count,
+          retend_cust_perc = round(num_retend_customers/total_customers*100,2))
+```
+  
+  
+  * Highest states in purchasing:
+```{r}
+df_all_unique %>% 
+  mutate(customer_state=fct_lump_n(customer_state, 10)) %>%
+  drop_na(customer_state) %>% 
+  group_by(customer_state) %>% 
+  summarize(Count=n()) %>% 
+  filter(customer_state != 'Other') %>% 
+  arrange(desc(customer_state))
+```
+  
+  * Highest states in purchasing pie chart:
+```{r}
+df_all_unique %>% 
+  mutate(customer_state=fct_lump_n(customer_state, 10)) %>%
+  drop_na(customer_state) %>% 
+  group_by(customer_state) %>% 
+  summarize(Count=n()) %>% 
+  filter(customer_state != 'Other') %>% 
+  arrange(desc(customer_state)) %>% 
+  mutate(prop = Count / sum(Count) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop ) %>% 
+  ggplot(aes(x="", y=prop, fill=customer_state)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  theme(legend.position="none") +
+  geom_text(aes(y = ypos, label = customer_state), color = "white", size=4) +
+  labs(title = 'Highest states in purchasing quantity')
+```
+
+  * Highest states in purchasing value:
+```{r warning=FALSE}
+df_all_unique %>% 
+  mutate(customer_state=fct_lump_n(customer_state, 15)) %>%
+  drop_na(customer_state) %>% 
+  group_by(customer_state) %>% 
+  summarize(total_value_k=sum(payment_value)/1000) %>% 
+  ggplot(aes(reorder(customer_state,desc(total_value_k)), total_value_k, fill=customer_state)) +
+  geom_bar(stat="identity", color="white") +
+  labs(title = 'Highest states in purchasing value', x='states', y='value by thousands')
+```
+
+  * Histogram with the purchasing values:
+```{r warning=FALSE}
+df_all_unique %>% drop_na() %>% 
+  ggplot() +
+    geom_histogram(aes(payment_value),binwidth=50, fill="#69b3a2",color="#e9ecef", alpha=0.9)+
+    xlim(0, 1000)
+```
+
+
+  
+
+* **Create Churn Analysis:**
+  1. Analyze customer churn rate over time, identifying factors influencing churn and proposing strategies to retain customers.
+  * To calculate the churn rate we must analyze the reviews first.
+  * Count of review scores:
+```{r}
+df_all_unique %>% count(review_score) %>% 
+  drop_na() %>% 
+  arrange(desc(n)) %>% 
+  ggplot() +
+  geom_col(aes(review_score,n,fill=review_score)) +
+  labs(y='number of reviews')
+```
+  
+  * The most repeated review comment in the scored 1 reviews:
+```{r}
+df_all_unique %>% group_by(review_comment_message,review_score) %>% 
+  filter(review_score==1, review_comment_message!='NA',order_status=='delivered') %>% 
+  select(review_comment_title,review_score,review_comment_message) %>% 
+  count(review_comment_message) %>% 
+  rename(count_of_review=n) %>% 
+  arrange(desc(count_of_review))
+```
+The most frequent review comment is 'I didn't receive the product', although the order status is delivered.
+  
+  * The AVG lowest sellers in review score:
+```{r}
+df_all_unique %>% group_by(seller_id) %>% 
+  summarise(AVG_score=round(mean(review_score)),count_of_reviews=n()) %>% 
+  arrange(AVG_score,desc(count_of_reviews))
+```
+
+  * The AVG lowest cities in review score:
+```{r}
+df_all_unique %>% group_by(customer_city) %>% 
+  drop_na(review_score) %>% 
+  summarise(AVG_score=round(mean(review_score)),count_of_reviews=n()) %>% 
+  arrange(AVG_score,desc(count_of_reviews))
+```
+
+  * AVG review score trend per month:
+```{r}
+df_all_unique %>% drop_na(review_score) %>% group_by(date=format(order_purchase_timestamp,'%Y-%m')) %>%
+  summarise(AVG_score=mean(review_score)) %>%
+  ggplot(aes(ym(date),y=AVG_score)) +
+  geom_line(linewidth = 1.3,colour="#69b3a2") +
+  geom_point(size=2.5,colour="#69b3a2") +
+  scale_x_date(date_breaks = '3 months',date_labels='%Y-%b') +
+  labs(title = 'AVG review score trend per month', x='Date', y='AVG Score')
+```
+
+  2. Examine the impact of product quality, delivery speed, and customer service on customer satisfaction and retention.
+  * The impact of the delayed orders on the review score.
+  
+```{r message=FALSE, warning=FALSE}
+count_of_1_review <- df_all_unique %>% drop_na(review_score) %>% 
+  filter(order_status == 'delivered',review_score==1) %>% 
+  summarise(count_of_1=n())
+
+df_all_unique %>% drop_na(review_score) %>%
+  mutate(var=date(order_delivered_customer_date) - date(order_estimated_delivery_date)) %>%
+  filter(order_status == 'delivered',var>0, review_score==1) %>% 
+  summarise(percent_of_delay=n()/count_of_1_review$count_of_1*100)
+```
+  
+```{r message=FALSE, warning=FALSE}
+df_all_unique %>% drop_na(review_score) %>% 
+  mutate(var=date(order_delivered_customer_date) - date(order_estimated_delivery_date)) %>%
+  filter(order_status == 'delivered',var>0) %>% 
+  ggplot() +
+  geom_col(aes(var,x=review_score), linewidth = 1.3,colour="#5655a2") +  
+  labs(title = 'AVG review score trend per month')
+```
+
+  * Customer Segmentation using K-Means Clustering based on purchase_behavior
+```{r}
+set.seed(123)
+kmeans_result <- kmeans(purchase_behavior[, c("Total_Purchases", "Avg_Hour_of_Purchase")], centers = 5)
+purchase_behavior$Segment <- kmeans_result$cluster
+```
+  
+  * create a Churn Analysis:
+```{r}
+# Define churn based on a condition, e.g., no purchases in the last 6 months
+current_date <- max(df_all_unique$order_purchase_timestamp)
+df_all_unique2 <- df_all_unique %>%
+  group_by(customer_unique_id) %>%
+  summarise(Last_Purchase_Date = max(order_purchase_timestamp)) %>%
+  ungroup() %>%
+  mutate(Churn = ifelse(difftime(current_date, Last_Purchase_Date, units = "days") > 180, 1, 0))
+
+df_all_unique2 <- full_join(df_all_unique2,df_all_unique)
+
+# Merge churn data back to purchase_behavior
+purchase_behavior <- merge(purchase_behavior, df_all_unique2[, c("customer_unique_id", "Churn")], by = "customer_unique_id")
+head(purchase_behavior)
+```
+  
+* **Design a Predictive Model:**
+  1. Build predictive models to forecast sales, customer demand, or product popularity.
+  * Building a Predictive Modeling for Sales Forecasting:
+```{r}
+# Aggregate sales data by month
+monthly_sales <- df_all_unique2 %>% drop_na(price) %>% 
+  group_by(Month = floor_date(order_purchase_timestamp, "month")) %>%
+  summarise(Total_Sales = sum(price))
+```
+
+  * Time Series Forecasting using ARIMA
+```{r}
+sales_ts <- ts(monthly_sales$Total_Sales, frequency = 12)
+arima_model <- auto.arima(sales_ts)
+forecasted_sales <- forecast(arima_model, h = 12) # Forecasting next 12 months
+```
+
+  * Plotting the forecast
+```{r}
+plot(forecasted_sales)
+```
+    
+
+* **Visualize the findings and reporting it:**
+  * **The findings:**
+    * The company is on a growing scale since the beginning.
+    * The price & quantity sales seasonality peak is in the fourth quarter of the year.
+    * Most selling categories are related to home furniture, beauty products, and sports.
+    * The highest states in purchasing value are RJ, MG, and PR.
+    * The payments value distribution are between 50 – 200.
+    * The company’s rating are normally, but the order delivery delay have a high impact on the low ratings.
+  
+  * **The Recommendations:**
+    * Develop a main dashboard with the most selling categories in the company user’s app.
+    * Prioritize the low-price items in the search feature in the user’s app, to enhance the customer experience.
+    * Minimize the order delivery duration, to enhance the customer’s reviews score or increase the estimated delivery time to develop honesty with the customers.
+    * Cooperation with the SEO team to increase the advertising in the highest states and cities in purchasing, to increase the customer base.
+  
+  * Link for the repository on GitHub: https://github.com/a7mdNasrr/Olist-Brazilian-E-commerce-Analysis-Project
+  
